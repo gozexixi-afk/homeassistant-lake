@@ -1,0 +1,527 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "APsystems Lake_6 Local API",
+    "version": "1.4",
+    "description": "APsystems Lake_6 本地 HTTP 接口（依据 LocalAPI User Manual V1.4 整理）。\n\n- 默认端口 80（与 EZ1 的 8050 不同），Base URL 形如 http://{ip}:80\n- 统一响应信封 { data, deviceId, code, message }，code 为业务返回码，与 HTTP 状态码无关，校验请用 code == 200\n- 所有业务数值字段均为 string 类型（含功率、功率上限、放电深度）\n- 危险提示：POST /modes 与 POST /control-panels 会真实改变设备行为，导入后建议先在测试设备上验证"
+  },
+  "servers": [
+    {
+      "url": "http://192.168.1.100:80",
+      "description": "Lake_6 设备（导入后请把 IP 改为实际地址，建议在环境变量中维护 baseUrl）"
+    }
+  ],
+  "tags": [
+    {
+      "name": "设备状态",
+      "description": "设备基本信息、告警标志位、能量与功率数据（只读）"
+    },
+    {
+      "name": "模式配置",
+      "description": "工作模式长期策略：自消耗 / 分时电价 / 备电 / AI"
+    },
+    {
+      "name": "控制面板",
+      "description": "一次性充放电计划，优先级最高，执行完成后自动清除"
+    }
+  ],
+  "paths": {
+    "/devices": {
+      "get": {
+        "tags": ["设备状态"],
+        "summary": "获取设备基本信息",
+        "description": "返回设备唯一标识、型号、固件版本、电池容量、Wi-Fi 信息。",
+        "operationId": "getDevices",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DevicesResponse" },
+                "example": {
+                  "data": {
+                    "dev_id": "D00000000000",
+                    "type": "EZHI SERIES",
+                    "dev_ver": "VERSION V1.0",
+                    "bat_cap": "0.00",
+                    "ssid": "MYSSID",
+                    "ip": "192.168.1.2",
+                    "rssi": -50
+                  },
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alarms": {
+      "get": {
+        "tags": ["设备状态"],
+        "summary": "获取设备告警信息",
+        "description": "14 个告警标志位，全部为 string 类型：\"0\" 表示正常，\"1\" 表示异常。注意 dev_temp 在本接口表示温度保护告警标志位，与 /energies 中的温度数值同名不同义。",
+        "operationId": "getAlarms",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AlarmsResponse" },
+                "example": {
+                  "data": {
+                    "bat_overtemp": "0",
+                    "bat_undertemp": "0",
+                    "bat_comm_err": "0",
+                    "bat_overvolt": "0",
+                    "bat_undervolt": "0",
+                    "bat_overcur": "0",
+                    "bat_ie": "0",
+                    "dev_temp": "0",
+                    "dev_sys_err": "0",
+                    "bat_shutdown": "0",
+                    "grid_anomaly": "0",
+                    "offgrid_overcur": "0",
+                    "offgrid_shortcir": "0",
+                    "bat_cal": "0"
+                  },
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/energies": {
+      "get": {
+        "tags": ["设备状态"],
+        "summary": "获取设备能量信息",
+        "description": "实时功率（W）与累计电量（kWh）混合返回。注意：V1.4 文档示例中 ongrid_impE、offgrid_expE、offgrid_impE 三个键名疑似带尾部空格，实测时请打印原始 JSON 的 keys() 确认。",
+        "operationId": "getEnergies",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EnergiesResponse" },
+                "example": {
+                  "data": {
+                    "bat_soc": "0.0",
+                    "bat_temp": "0.0",
+                    "dev_temp": "0.0",
+                    "bat_impE": "0.0000",
+                    "bat_expE": "0.0000",
+                    "ongrid_expE": "0.0000",
+                    "ongrid_impE": "0.0000",
+                    "offgrid_expE": "0.0000",
+                    "offgrid_impE": "0.0000",
+                    "bat_power": "0",
+                    "ongrid_power": "0",
+                    "offgrid_power": "0",
+                    "bat_status": "1"
+                  },
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/modes": {
+      "get": {
+        "tags": ["模式配置"],
+        "summary": "查询工作模式配置",
+        "description": "读取当前长期运行策略。time_cfg 仅在 mode=3 时有意义，backup_charP 仅在 mode=4 时有意义。",
+        "operationId": "getModes",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModesResponse" },
+                "example": {
+                  "data": {
+                    "mode": "2",
+                    "eco": "0",
+                    "offgrid_on": "0",
+                    "power_limit": "2500",
+                    "time_cfg": [],
+                    "backup_charP": "0",
+                    "dod": "20"
+                  },
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["模式配置"],
+        "summary": "设置工作模式配置",
+        "description": "所有字段均可选，不改的字段直接省略。危险接口：会真实改变设备运行策略。",
+        "operationId": "setModes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ModesSetRequest" },
+              "examples": {
+                "自消耗模式": {
+                  "summary": "设为自消耗模式，放电深度 20%",
+                  "value": {
+                    "mode": "2",
+                    "eco": "0",
+                    "offgrid_on": "0",
+                    "dod": "20"
+                  }
+                },
+                "分时电价模式": {
+                  "summary": "周一、周二 12:00-13:00 以 100W 充电",
+                  "value": {
+                    "mode": "3",
+                    "time_cfg": [
+                      {
+                        "E": "1",
+                        "W": [1, 2],
+                        "TM": [
+                          {
+                            "F": "1",
+                            "T": "12001300",
+                            "FI": { "P": "100" }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "备电模式": {
+                  "summary": "设为备电模式，充电功率 2500W",
+                  "value": {
+                    "mode": "4",
+                    "backup_charP": "2500"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AckResponse" },
+                "example": {
+                  "data": {},
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/control-panels": {
+      "get": {
+        "tags": ["控制面板"],
+        "summary": "查询控制面板配置",
+        "description": "mode=0 表示无配置/已清除；mode=1 表示单次配置正在执行中。",
+        "operationId": "getControlPanels",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ControlPanelsResponse" },
+                "example": {
+                  "data": {
+                    "mode": "0",
+                    "MI1": {}
+                  },
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["控制面板"],
+        "summary": "设置控制面板配置（一次性充放电计划）",
+        "description": "优先级最高，会覆盖其他模式，执行完成后自动清除并恢复原模式。time 与 power 为按下标配对的平行数组，长度必须一致。危险接口。",
+        "operationId": "setControlPanels",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ControlPanelsSetRequest" },
+              "examples": {
+                "一次性充放电计划": {
+                  "summary": "1月1日 10:00-15:00 放电 500W；1月2日同时段充电 200W",
+                  "value": {
+                    "mode": "1",
+                    "MI1": {
+                      "time": [
+                        "202601011000202601011500",
+                        "202601021000202601021500"
+                      ],
+                      "power": ["500", "-200"]
+                    }
+                  }
+                },
+                "清除配置": {
+                  "summary": "清除当前控制面板配置",
+                  "value": {
+                    "mode": "0",
+                    "MI1": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AckResponse" },
+                "example": {
+                  "data": {},
+                  "deviceId": "D00000000000",
+                  "code": 200,
+                  "message": "SUCCESS"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DevicesResponse": {
+        "type": "object",
+        "required": ["data", "deviceId", "code", "message"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/DeviceInfo" },
+          "deviceId": { "type": "string", "description": "设备唯一标识" },
+          "code": { "$ref": "#/components/schemas/Code" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "DeviceInfo": {
+        "type": "object",
+        "properties": {
+          "dev_id": { "type": "string", "description": "设备唯一标识，应与信封 deviceId 一致" },
+          "type": { "type": "string", "description": "设备型号，如 EZHI SERIES" },
+          "dev_ver": { "type": "string", "description": "固件版本，格式为「前缀 空格 版本号」，如 VERSION V1.0；解析时按空格切分取第 2 段" },
+          "bat_cap": { "type": "string", "description": "电池容量，文档未标注单位" },
+          "ssid": { "type": "string", "description": "当前连接 Wi-Fi 名称" },
+          "ip": { "type": "string", "description": "设备 IPv4 地址" },
+          "rssi": { "type": "string", "description": "信号强度 dBm。文档标注为 string，但官方示例返回数字 -50，解析需同时兼容 string 与 number" }
+        }
+      },
+      "AlarmsResponse": {
+        "type": "object",
+        "required": ["data", "deviceId", "code", "message"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Alarms" },
+          "deviceId": { "type": "string" },
+          "code": { "$ref": "#/components/schemas/Code" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "Alarms": {
+        "type": "object",
+        "description": "全部字段为 string：\"0\" 正常，\"1\" 异常",
+        "properties": {
+          "bat_overtemp": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_undertemp": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_comm_err": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_overvolt": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_undervolt": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_overcur": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_ie": { "$ref": "#/components/schemas/AlarmFlag" },
+          "dev_temp": { "type": "string", "enum": ["0", "1"], "description": "设备温度保护告警（本接口为标志位，非温度值）" },
+          "dev_sys_err": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_shutdown": { "$ref": "#/components/schemas/AlarmFlag" },
+          "grid_anomaly": { "$ref": "#/components/schemas/AlarmFlag" },
+          "offgrid_overcur": { "$ref": "#/components/schemas/AlarmFlag" },
+          "offgrid_shortcir": { "$ref": "#/components/schemas/AlarmFlag" },
+          "bat_cal": { "$ref": "#/components/schemas/AlarmFlag" }
+        }
+      },
+      "AlarmFlag": {
+        "type": "string",
+        "enum": ["0", "1"],
+        "description": "\"0\" 正常，\"1\" 异常"
+      },
+      "EnergiesResponse": {
+        "type": "object",
+        "required": ["data", "deviceId", "code", "message"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Energies" },
+          "deviceId": { "type": "string" },
+          "code": { "$ref": "#/components/schemas/Code" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "Energies": {
+        "type": "object",
+        "description": "实时功率单位为 W；累计电量单位为 kWh。V1.4 文档示例中部分键名疑似带尾部空格，实测需确认。",
+        "properties": {
+          "bat_soc": { "type": "string", "description": "电池荷电状态，单位 %" },
+          "bat_temp": { "type": "string", "description": "电池温度，单位 °C" },
+          "dev_temp": { "type": "string", "description": "设备温度，单位 °C" },
+          "bat_impE": { "type": "string", "description": "电池累计充电量，单位 kWh" },
+          "bat_expE": { "type": "string", "description": "电池累计放电量，单位 kWh" },
+          "ongrid_expE": { "type": "string", "description": "并网侧累计输出电量，单位 kWh" },
+          "ongrid_impE": { "type": "string", "description": "并网侧累计输入电量，单位 kWh" },
+          "offgrid_expE": { "type": "string", "description": "离网侧累计输出电量，单位 kWh" },
+          "offgrid_impE": { "type": "string", "description": "离网侧累计输入电量，单位 kWh" },
+          "bat_power": { "type": "string", "description": "电池侧功率，单位 W" },
+          "ongrid_power": { "type": "string", "description": "并网侧功率，单位 W" },
+          "offgrid_power": { "type": "string", "description": "离网侧功率，单位 W" },
+          "bat_status": { "$ref": "#/components/schemas/BatteryStatus" }
+        }
+      },
+      "BatteryStatus": {
+        "type": "string",
+        "enum": ["1", "2", "3", "4", "5", "6", "7"],
+        "description": "1=IDLE 空闲；2=CHARGING 充电；3=DISCHARGING 放电；4=FAULT 故障；5=SHUTDOWN 关机；6=NO COMMUNICATION 无通信；7=HEATING 加热"
+      },
+      "ModesResponse": {
+        "type": "object",
+        "required": ["data", "deviceId", "code", "message"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/Modes" },
+          "deviceId": { "type": "string" },
+          "code": { "$ref": "#/components/schemas/Code" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "Modes": {
+        "type": "object",
+        "properties": {
+          "mode": { "$ref": "#/components/schemas/OperatingMode" },
+          "eco": { "type": "string", "enum": ["0", "1"], "description": "经济模式，0=关 1=开" },
+          "offgrid_on": { "type": "string", "enum": ["0", "1"], "description": "离网输出开关，仅离网状态生效（并网时恒开）" },
+          "power_limit": { "type": "string", "description": "并网侧输出功率上限，单位 W，可设范围 0-2500" },
+          "time_cfg": { "type": "array", "description": "分时电价配置，仅 mode=3 生效", "items": { "$ref": "#/components/schemas/TimeCfg" } },
+          "backup_charP": { "type": "string", "description": "备电模式充电功率，单位 W，仅 mode=4 生效" },
+          "dod": { "type": "string", "description": "放电深度，单位 %，可设范围 15-90" }
+        }
+      },
+      "OperatingMode": {
+        "type": "string",
+        "enum": ["1", "2", "3", "4"],
+        "description": "1=AI 模式（本地下发不生效，需到 App 设置）；2=自消耗模式（默认）；3=分时电价模式；4=备电模式"
+      },
+      "TimeCfg": {
+        "type": "object",
+        "description": "分时电价的一组策略，仅在 mode=3 生效",
+        "properties": {
+          "E": { "type": "string", "enum": ["0", "1"], "description": "是否启用分时控制，0=禁用 1=启用" },
+          "W": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 7 }, "description": "生效星期，1=周一 … 7=周日，如 [1,2,3,4,5]" },
+          "TM": { "type": "array", "items": { "$ref": "#/components/schemas/TimeSlot" }, "description": "时间段列表" }
+        }
+      },
+      "TimeSlot": {
+        "type": "object",
+        "properties": {
+          "T": { "type": "string", "pattern": "^([01][0-9]|2[0-3])[0-5][0-9]([01][0-9]|2[0-3])[0-5][0-9]$", "description": "时间段，格式 HHMMHHMM（24 小时制），起止时间必须在同一天，不可跨天，如 12001300" },
+          "F": { "type": "string", "enum": ["1", "2", "3"], "description": "执行功能：1=充电；2=放电；3=自消耗（等同 mode 2）" },
+          "FI": { "$ref": "#/components/schemas/FuncParam" }
+        }
+      },
+      "FuncParam": {
+        "type": "object",
+        "properties": {
+          "P": { "type": "string", "description": "功率，单位 W。F=1 时为充电功率（0-2500）；F=2 时为放电功率（0-2500，若 power_limit 小于 2500 则实际放电功率受其限制）；F=3 时该值不适用" }
+        }
+      },
+      "ModesSetRequest": {
+        "type": "object",
+        "description": "所有字段均可选，未变更的字段直接省略",
+        "properties": {
+          "mode": { "$ref": "#/components/schemas/OperatingMode" },
+          "eco": { "type": "string", "enum": ["0", "1"], "description": "经济模式，0=关 1=开" },
+          "offgrid_on": { "type": "string", "enum": ["0", "1"], "description": "离网输出开关，仅离网状态生效" },
+          "power_limit": { "type": "string", "description": "并网侧输出功率上限，单位 W，范围 0-2500" },
+          "time_cfg": { "type": "array", "description": "分时电价配置，仅 mode=3 生效", "items": { "$ref": "#/components/schemas/TimeCfg" } },
+          "backup_charP": { "type": "string", "description": "备电模式充电功率，单位 W，仅 mode=4 生效" },
+          "dod": { "type": "string", "description": "放电深度，单位 %，范围 15-90" }
+        }
+      },
+      "ControlPanelsResponse": {
+        "type": "object",
+        "required": ["data", "deviceId", "code", "message"],
+        "properties": {
+          "data": { "$ref": "#/components/schemas/ControlPanels" },
+          "deviceId": { "type": "string" },
+          "code": { "$ref": "#/components/schemas/Code" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "ControlPanels": {
+        "type": "object",
+        "properties": {
+          "mode": { "type": "string", "enum": ["0", "1"], "description": "0=无配置/已清除；1=单次配置执行中（完成后自动清除，优先级最高，会覆盖其他模式）" },
+          "MI1": { "$ref": "#/components/schemas/ControlPanelMI1" }
+        }
+      },
+      "ControlPanelMI1": {
+        "type": "object",
+        "properties": {
+          "time": { "type": "array", "items": { "type": "string", "pattern": "^[0-9]{24}$" }, "description": "时间窗数组，格式 YYYYMMDDHHMMYYYYMMDDHHMM（24 位，起止首尾相接无分隔符），如 202601011000202601011500" },
+          "power": { "type": "array", "items": { "type": "string" }, "description": "功率数组，与 time 按下标一一对应，长度必须一致。正数=放电，负数=充电，0=待机，单位 W" }
+        }
+      },
+      "ControlPanelsSetRequest": {
+        "type": "object",
+        "required": ["mode"],
+        "properties": {
+          "mode": { "type": "string", "enum": ["0", "1"], "description": "0=清除配置；1=下发单次配置" },
+          "MI1": { "$ref": "#/components/schemas/ControlPanelMI1" }
+        }
+      },
+      "AckResponse": {
+        "type": "object",
+        "required": ["deviceId", "code", "message"],
+        "properties": {
+          "data": { "type": "object", "description": "写入类接口通常返回空对象" },
+          "deviceId": { "type": "string" },
+          "code": { "$ref": "#/components/schemas/Code" },
+          "message": { "$ref": "#/components/schemas/Message" }
+        }
+      },
+      "Code": {
+        "type": "integer",
+        "enum": [200, 1001, 1002, 1003, 1004, 2001],
+        "description": "业务返回码，与 HTTP 状态码无关。200=成功；1001=数据长度错误；1002=数据格式错误；1003/1004=内部错误；2001=内部通信错误"
+      },
+      "Message": {
+        "type": "string",
+        "enum": ["SUCCESS", "FAILED"],
+        "description": "业务结果标识"
+      }
+    }
+  }
+}

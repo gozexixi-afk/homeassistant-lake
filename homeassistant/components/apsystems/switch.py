@@ -1,0 +1,65 @@
+"""The power switch which can be toggled via the APsystems local API integration."""
+
+from typing import Any, cast, override
+
+from aiohttp.client_exceptions import ClientConnectionError
+from APsystemsEZ1 import InverterReturnedError
+
+from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+from .coordinator import ApSystemsConfigEntry, ApSystemsData
+from .entity import ApSystemsEntity
+from .lake6.coordinator import Lake6ConfigEntry, Lake6RuntimeData
+from .lake6.switch import async_setup_entry as async_setup_lake6_switches
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ApSystemsConfigEntry,
+    add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    """Set up the switch platform."""
+    config = config_entry.runtime_data
+    if isinstance(config, Lake6RuntimeData):
+        await async_setup_lake6_switches(
+            hass, cast(Lake6ConfigEntry, config_entry), add_entities
+        )
+        return
+    add_entities([ApSystemsInverterSwitch(config)], True)
+
+
+class ApSystemsInverterSwitch(ApSystemsEntity, SwitchEntity):
+    """The switch class for APSystems switches."""
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_translation_key = "inverter_status"
+
+    def __init__(self, data: ApSystemsData) -> None:
+        """Initialize the switch."""
+        super().__init__(data)
+        self._api = data.coordinator.api
+        self._attr_unique_id = f"{data.device_id}_inverter_status"
+        if data.coordinator.battery_system:
+            self._attr_available = False
+
+    async def async_update(self) -> None:
+        """Update switch status and availability."""
+        try:
+            status = await self._api.get_device_power_status()
+        except TimeoutError, ClientConnectionError, InverterReturnedError:
+            self._attr_available = False
+        else:
+            self._attr_available = True
+            self._attr_is_on = status
+
+    @override
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the switch on."""
+        await self._api.set_device_power_status(True)
+
+    @override
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the switch off."""
+        await self._api.set_device_power_status(False)
